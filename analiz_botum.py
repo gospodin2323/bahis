@@ -6,46 +6,44 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from flask import Flask
 from threading import Thread
 
-# --- GÜVENLİK BİLGİLERİ (DEĞİŞİKLİK YOK) ---
-# KODUN İÇİNE YAZMIYORUZ, HOSTİNG PLATFORMUNUN "ENVIRONMENT VARIABLES" BÖLÜMÜNDEN ÇEKECEĞİZ
+# GÜVENLİK BİLGİLERİ RENDER'DAN ÇEKİLİYOR
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-# ID'yi integer'a (sayıya) çeviriyoruz
 ALLOWED_USER_ID = int(os.getenv('ALLOWED_USER_ID'))
 
-# --- WEB SUNUCUSU KISMI (BOTU AKTİF TUTMAK İÇİN) ---
+# WEB SUNUCUSU
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "Komut Tabanlı Bot Aktif ve Çalışıyor."
+    return "Test Modundaki Bot Aktif ve Çalışıyor."
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
 
-# --- TELEGRAM BOT KISMI ---
+# LOGLAMA
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Gemini API Yapılandırması
+# GEMINI API YAPILANDIRMASI
 try:
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
     logger.info("Gemini API başarıyla yapılandırıldı.")
 except Exception as e:
-    logger.error(f"Gemini API yapılandırma hatası: {e}")
-    
+    logger.error(f"GEMINI API YAPILANDIRMA HATASI: {e}")
+
+# MERKEZİ İSTEK FONKSİYONU
 async def send_gemini_request(prompt: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Gemini'ye istek gönderen ve cevabı Telegram'a yollayan merkezi fonksiyon"""
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action='TYPING')
     try:
         response = await model.generate_content_async(prompt)
         await update.message.reply_text(response.text, parse_mode='Markdown')
         logger.info("Cevap başarıyla gönderildi.")
     except Exception as e:
-        logger.error(f"Mesaj işlenirken hata oluştu: {e}")
-        await update.message.reply_text("Üzgünüm, analiz sırasında bir hata oluştu.")
+        logger.error(f"GEMINI ISTEGI SIRASINDA HATA: {e}")
+        await update.message.reply_text(f"Üzgünüm, analiz sırasında bir API hatası oluştu. Lütfen Render'daki logları kontrol edin.")
 
 # --- KOMUT FONKSİYONLARI ---
 
@@ -56,28 +54,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(welcome_message)
 
 async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.message.from_user.id
+    if user_id != ALLOWED_USER_ID: return
     help_text = """
     *Kullanılabilir Komutlar:*
-
+    `/test` - API bağlantısını test eder.
     `/yardim` - Bu yardım menüsünü gösterir.
-
     `/fikstur <lig_kodu>` - Ligin haftalık fikstürünü getirir.
-    *Örnek:* `/fikstur pl`
-
-    `/analiz` veya `/tahmin <takim1> vs <takim2>` - Maç analizi/tahmini yapar.
-    *Örnek:* `/tahmin manchesterunited liverpool`
-
+    `/analiz <takim1> vs <takim2>` - Maç analizi/tahmini yapar.
     `/form <takim_adi>` - Takımın son 5 maçlık formunu gösterir.
-    *Örnek:* `/form fenerbahce`
-    
     `/puan <lig_kodu>` - Ligin puan durumunu gösterir.
-    *Örnek:* `/puan tsl`
-
-    *Lig Kodları:* `tsl`, `pl`, `ll`, `bl`, `sa`, `l1`, `ere`, `ppl`
     """
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
+async def test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.message.from_user.id
+    if user_id != ALLOWED_USER_ID: return
+    await update.message.reply_text("Gemini API bağlantısı test ediliyor...")
+    prompt = "Merhaba, sen kimsin? kendini bir cümleyle tanıt."
+    await send_gemini_request(prompt, update, context)
+
 async def fikstur(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.message.from_user.id
+    if user_id != ALLOWED_USER_ID: return
     if not context.args:
         await update.message.reply_text("Lütfen bir lig kodu belirtin. Örnek: `/fikstur pl`")
         return
@@ -86,6 +85,8 @@ async def fikstur(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_gemini_request(prompt, update, context)
 
 async def analiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.message.from_user.id
+    if user_id != ALLOWED_USER_ID: return
     if not context.args or len(context.args) < 2:
         await update.message.reply_text("Lütfen analiz için iki takım belirtin. Örnek: `/tahmin realmadrid barcelona`")
         return
@@ -94,6 +95,8 @@ async def analiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_gemini_request(prompt, update, context)
 
 async def form(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.message.from_user.id
+    if user_id != ALLOWED_USER_ID: return
     if not context.args:
         await update.message.reply_text("Lütfen bir takım adı belirtin. Örnek: `/form galatasaray`")
         return
@@ -102,6 +105,8 @@ async def form(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_gemini_request(prompt, update, context)
 
 async def puan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.message.from_user.id
+    if user_id != ALLOWED_USER_ID: return
     if not context.args:
         await update.message.reply_text("Lütfen bir lig kodu belirtin. Örnek: `/puan tsl`")
         return
@@ -110,5 +115,31 @@ async def puan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_gemini_request(prompt, update, context)
 
 async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.message.from_user.id
+    if user_id != ALLOWED_USER_ID: return
     user_text = update.message.text
-    prompt = f"Bir
+    prompt = f"Bir kullanıcı şu futbol sorgusunu sordu: '{user_text}'. Bu sorguya en uygun ve detaylı cevabı ver."
+    await send_gemini_request(prompt, update, context)
+
+def main() -> None:
+    flask_thread = Thread(target=run_flask)
+    flask_thread.start()
+    
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("yardim", yardim))
+    application.add_handler(CommandHandler("yardım", yardim))
+    application.add_handler(CommandHandler("test", test)) # YENİ TEST KOMUTU
+    application.add_handler(CommandHandler("fikstur", fikstur))
+    application.add_handler(CommandHandler("analiz", analiz))
+    application.add_handler(CommandHandler("tahmin", analiz))
+    application.add_handler(CommandHandler("form", form))
+    application.add_handler(CommandHandler("puan", puan))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_free_text))
+    
+    logger.info("Test modundaki bot başlatılıyor...")
+    application.run_polling()
+
+if __name__ == '__main__':
+    main()
